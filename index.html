@@ -1,0 +1,1577 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Video Wall</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Layout: a floating library panel on the left (screen count, folder tree), the player wall on the right (transport bar + CSS grid of screens). On phones the panel becomes an overlay. */
+:root{
+  --bg:#e8ebed; --panel:#f6f7f8; --panel-2:#eceff1; --line:#cdd4d9; --fg:#12181c; --muted:#59656c;
+  --accent:#0b7c82; --accent-fg:#ffffff; --accent-soft:#d3ebec;
+  --screen:#080a0c; --screen-fg:#e7eef0; --screen-muted:#8c9aa1;
+  --font-display:'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;
+  --font-body:'Instrument Sans','Segoe UI',system-ui,sans-serif;
+  --font-mono:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0d1114; --panel:#151a1e; --panel-2:#1c2227; --line:#2a323a; --fg:#e5ebee; --muted:#8e9aa2;
+    --accent:#45c2c6; --accent-fg:#04201f; --accent-soft:#143538;
+    --screen:#030405; --screen-fg:#e7eef0; --screen-muted:#8c9aa1;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0d1114; --panel:#151a1e; --panel-2:#1c2227; --line:#2a323a; --fg:#e5ebee; --muted:#8e9aa2;
+  --accent:#45c2c6; --accent-fg:#04201f; --accent-soft:#143538;
+  --screen:#030405; --screen-fg:#e7eef0; --screen-muted:#8c9aa1;
+  color-scheme:dark;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--fg); font-family:var(--font-body); font-size:14px; line-height:1.4;
+  padding-block:12px;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));
+  padding-right:max(16px, env(safe-area-inset-right, 0px));
+  display:flex; overflow:hidden;
+}
+button,select,input{font:inherit;color:inherit}
+h1,h2,p{margin:0}
+
+.shell{flex:1;min-width:0;min-height:0;display:grid;grid-template-columns:304px minmax(0,1fr);gap:12px;position:relative}
+
+/* ---------- buttons ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:34px;padding:0 12px;border:1px solid var(--line);background:var(--panel);border-radius:7px;cursor:pointer;white-space:nowrap}
+.btn:hover:not(:disabled){background:var(--panel-2)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:transparent;font-weight:600}
+.btn.primary:hover:not(:disabled){background:var(--accent);filter:brightness(1.08)}
+.btn.icon{width:34px;padding:0}
+.btn[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent)}
+.btn.mono{font-family:var(--font-mono);font-size:12px}
+button:focus-visible,select:focus-visible,input:focus-visible,[role="button"]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ic{flex:none}
+.mobile-only{display:none}
+
+/* ---------- left panel ---------- */
+.nav{background:var(--panel);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden}
+.brand{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:14px 14px 12px}
+.brand h1{font-family:var(--font-display);font-weight:700;font-size:21px;letter-spacing:-.01em;line-height:1.1}
+.brand p{margin-top:4px;font-size:12px;color:var(--muted)}
+.sec{padding:12px 14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px;min-width:0}
+.sec.lib{flex:1;min-height:0}
+.sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.sec-head h2{font:500 11px var(--font-mono);letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.readout{font:500 12px var(--font-mono);font-variant-numeric:tabular-nums}
+
+.presets{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.preset{display:flex;flex-direction:column;align-items:center;gap:6px;padding:9px 0 7px;border:1px solid var(--line);background:var(--panel-2);border-radius:8px;cursor:pointer;color:var(--muted)}
+.preset:hover{border-color:var(--muted)}
+.preset[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--fg)}
+.glyph{display:grid;gap:2px;width:34px;height:22px}
+.glyph i{display:block;background:currentColor;opacity:.5;border-radius:1.5px}
+.preset[aria-pressed="true"] .glyph i{background:var(--accent);opacity:1}
+.preset b{font:500 12px var(--font-mono)}
+
+.steppers{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stepper{display:flex;align-items:center;gap:6px;min-width:0}
+.stepper label{font-size:12px;color:var(--muted);flex:1}
+.stepper .btn{width:30px;height:30px;font-size:16px;line-height:1}
+.stepper output{min-width:1.2em;text-align:center;font:500 13px var(--font-mono);font-variant-numeric:tabular-nums}
+.hint{font-size:12px;color:var(--muted)}
+
+.lib-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.note{font-size:12px;color:var(--muted);min-height:1em}
+.note.codec{font:400 11px var(--font-mono)}
+.brand h1 small{font:500 11px var(--font-mono);color:var(--muted);margin-left:8px;letter-spacing:.04em;vertical-align:middle}
+.tree-wrap{flex:1;min-height:90px;overflow:auto;margin:0 -6px;padding:2px 6px}
+.tree,.tree ul{list-style:none;margin:0;padding:0}
+.row{display:flex;align-items:center;gap:2px;min-height:30px;border-radius:6px;padding-right:6px}
+.row:hover{background:var(--panel-2)}
+.row.sel{background:var(--accent-soft)}
+.chev{flex:none;width:22px;height:26px;display:grid;place-items:center;background:none;border:0;border-radius:5px;cursor:pointer;color:var(--muted)}
+.chev .ic{transition:transform .12s}
+.chev[aria-expanded="true"] .ic{transform:rotate(90deg)}
+.name{flex:1;min-width:0;display:flex;align-items:center;gap:7px;padding:4px 6px;background:none;border:0;border-radius:6px;cursor:pointer;text-align:left}
+.name .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row.sel .name .ic{color:var(--accent)}
+.name .ic{color:var(--muted)}
+.vid{cursor:grab}
+.vid .t{font-size:13px}
+.count{font:400 11px var(--font-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.dot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--accent)}
+
+.folder-bar{border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:9px}
+.fb-row{display:flex;align-items:center;gap:8px;min-width:0}
+.fb-row .lbl{font:500 11px var(--font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.fb-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.range{flex:1;text-align:center;font:500 12px var(--font-mono);font-variant-numeric:tabular-nums}
+.check{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px}
+.check input{accent-color:var(--accent);width:16px;height:16px;margin:0}
+.folder-bar .btn.icon{width:32px;height:32px}
+
+/* ---------- effects tab ---------- */
+.tabs{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--line)}
+.tab{height:38px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);font:500 12px var(--font-mono);letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+.tab[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent)}
+.sec.fxp{flex:1;min-height:0;overflow:auto;gap:12px}
+.sec.fxp > *{flex-shrink:0}
+.field.wide{display:flex;width:100%}
+.field.wide select{flex:1;min-width:0}
+.seg{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{height:32px;border:0;background:var(--panel);cursor:pointer;font-size:13px}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{height:30px;padding:0 11px;border:1px solid var(--line);border-radius:999px;background:var(--panel-2);cursor:pointer;font-size:12.5px}
+.chip[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);font-weight:600}
+.params{display:flex;flex-direction:column;gap:10px}
+.prm{display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center}
+.prm label{font-size:12.5px;color:var(--muted)}
+.prm output{font:500 12px var(--font-mono);font-variant-numeric:tabular-nums}
+.prm input[type="range"]{grid-column:1/-1;width:100%;margin:0;accent-color:var(--accent)}
+.prm select{grid-column:1/-1;height:32px;border:1px solid var(--line);border-radius:7px;background:var(--panel);padding:0 6px}
+.beatbox{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:12px}
+.beatdot{--beat:0;width:12px;height:12px;border-radius:50%;background:var(--accent);opacity:calc(.35 + var(--beat) * .65);transform:scale(calc(1 + var(--beat) * .9))}
+.fxcv{position:absolute;inset:0;width:100%;height:100%;z-index:1;display:block;background:var(--screen)}
+
+/* ---------- stage ---------- */
+.stage{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0;background:var(--bg)}
+.stage:fullscreen{padding:12px}
+.transport{display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px}
+.group{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.scrub-wrap{flex:1 1 240px;min-width:0;display:flex;align-items:center;gap:10px}
+.scrub{flex:1;min-width:80px;accent-color:var(--accent);height:24px}
+.time{font:400 12px var(--font-mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.field{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 4px 0 10px;border:1px solid var(--line);border-radius:7px;background:var(--panel)}
+.field span{font:500 11px var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.field select{border:0;background:transparent;height:30px;font-size:13px;cursor:pointer;color:var(--fg)}
+
+.grid{flex:1;min-height:0;display:grid;gap:8px}
+.grid.zoomed{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:minmax(0,1fr)!important}
+.grid.zoomed .cell:not(.is-zoom){display:none}
+.cell{position:relative;min-width:0;min-height:0;background:var(--screen);color:var(--screen-fg);border-radius:8px;overflow:hidden}
+.cell::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:4;box-shadow:inset 0 0 0 2px transparent}
+.cell.active::after{box-shadow:inset 0 0 0 2px var(--accent)}
+.cell.drop::after{box-shadow:inset 0 0 0 3px var(--accent)}
+.cell video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:var(--screen);display:none}
+.cell.filled video{display:block}
+.grid[data-fit="cover"] .cell video{object-fit:cover}
+.empty{position:absolute;inset:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:10px;text-align:center;color:var(--screen-muted);font-size:12px;border:1px dashed rgba(140,154,161,.35);border-radius:6px}
+.empty b{font:500 11px var(--font-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--screen-fg)}
+.cell.filled .empty{display:none}
+.err{position:absolute;inset:0;z-index:1;display:flex;align-items:center;justify-content:center;padding:18px;text-align:center;background:var(--screen);color:var(--screen-fg);font-size:12px}
+.bar{position:absolute;left:0;right:0;z-index:2;display:flex;align-items:center;gap:6px;padding:8px}
+.bar.top{top:0;padding-bottom:20px;background:linear-gradient(rgba(0,0,0,.65),transparent);pointer-events:none}
+.bar.bottom{bottom:0;justify-content:flex-end;flex-wrap:wrap;padding-top:20px;background:linear-gradient(transparent,rgba(0,0,0,.72));opacity:0;transition:opacity .15s}
+.cell:not(.filled) .bar{display:none}
+.cell:hover .bar.bottom,.cell:focus-within .bar.bottom{opacity:1}
+@media (hover:none){.bar.bottom{opacity:1}}
+.idx{flex:none;font:500 11px var(--font-mono);background:rgba(255,255,255,.16);padding:2px 6px;border-radius:4px}
+.title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.cbtn{width:30px;height:30px;display:grid;place-items:center;border:0;border-radius:6px;background:rgba(255,255,255,.16);color:var(--screen-fg);cursor:pointer}
+.cbtn:hover{background:rgba(255,255,255,.3)}
+.csel{height:30px;min-width:0;max-width:120px;border:0;border-radius:6px;background:rgba(255,255,255,.16);color:var(--screen-fg);font-size:12px;padding:0 6px;cursor:pointer}
+.csel option{background:#1b2126;color:#e7eef0}
+@keyframes huespin{to{filter:hue-rotate(360deg)}}
+.fx-spin{animation:huespin 8s linear infinite}
+
+/* ---------- phones ---------- */
+@media (max-width:800px){
+  .shell{grid-template-columns:minmax(0,1fr)}
+  .nav{position:absolute;inset:0;z-index:20;display:none}
+  .shell.nav-open .nav{display:flex}
+  .mobile-only{display:inline-flex}
+  .grid{gap:6px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}.fx-spin{animation:none!important}}
+</style>
+
+</head>
+<body>
+<div class="shell" id="shell">
+  <aside class="nav" id="nav" aria-label="Screens and library">
+    <div class="brand">
+      <div>
+        <h1>Video Wall<small>v8</small></h1>
+        <p>Plays from your disk. Nothing is uploaded.</p>
+      </div>
+      <button class="btn mobile-only" id="navDone" type="button">Done</button>
+    </div>
+
+    <section class="sec" aria-labelledby="screensH">
+      <div class="sec-head"><h2 id="screensH">Screens</h2><span class="readout" id="readout"></span></div>
+      <div class="presets" id="presets" role="group" aria-label="Screen layout presets"></div>
+      <div class="steppers">
+        <div class="stepper">
+          <label for="colVal">Columns</label>
+          <button class="btn" id="colMinus" type="button" aria-label="Fewer columns">−</button>
+          <output id="colVal"></output>
+          <button class="btn" id="colPlus" type="button" aria-label="More columns">+</button>
+        </div>
+        <div class="stepper">
+          <label for="rowVal">Rows</label>
+          <button class="btn" id="rowMinus" type="button" aria-label="Fewer rows">−</button>
+          <output id="rowVal"></output>
+          <button class="btn" id="rowPlus" type="button" aria-label="More rows">+</button>
+        </div>
+      </div>
+      <p class="hint" id="perfHint" hidden>Many screens at once can slow playback, especially with HD files.</p>
+    </section>
+
+    <div class="tabs" role="group" aria-label="Library or effects">
+      <button class="tab" id="tabLib" type="button" aria-selected="true">Library</button>
+      <button class="tab" id="tabFx" type="button" aria-selected="false">Effects</button>
+    </div>
+
+    <section class="sec lib" aria-labelledby="libH">
+      <div class="sec-head"><h2 id="libH">Library</h2></div>
+      <div class="lib-actions">
+        <button class="btn" id="openFolder" type="button"><span data-icon="folder"></span>Open folder</button>
+        <button class="btn" id="addVideos" type="button"><span data-icon="film"></span>Add videos</button>
+      </div>
+      <input type="file" id="folderInput" webkitdirectory directory multiple hidden>
+      <input type="file" id="filesInput" accept="video/*,.mkv,.mov,.m4v,.avi" multiple hidden>
+      <p class="note" id="libNote" aria-live="polite"></p>
+      <p class="note codec" id="codecNote"></p>
+      <div class="tree-wrap" id="treeWrap"><ul class="tree" id="tree"></ul></div>
+      <div class="folder-bar" id="folderBar"></div>
+    </section>
+
+    <section class="sec fxp" id="fxSec" aria-labelledby="fxH" hidden>
+      <div class="sec-head"><h2 id="fxH">Effects</h2><span class="readout" id="fxTarget"></span></div>
+      <label class="field wide"><span>Effect</span>
+        <select id="fxSel" aria-label="Effect">
+          <option value="none">None</option>
+          <option value="mirror">Mirror Symmetry</option>
+          <option value="portals">Orbital Viewports</option>
+          <option value="slice">Strip Displacement</option>
+        </select>
+      </label>
+      <div class="seg" role="group" aria-label="Apply effect to">
+        <button type="button" data-target="active" aria-pressed="true">Outlined screen</button>
+        <button type="button" data-target="all" aria-pressed="false">All screens</button>
+      </div>
+      <div class="chips" id="fxPresets"></div>
+      <div class="params" id="fxParams"></div>
+      <div class="beatbox">
+        <div class="sec-head"><h2>Beat</h2><span class="beatdot" id="beatDot" aria-hidden="true"></span></div>
+        <label class="field wide"><span>Source</span>
+          <select id="beatMode" aria-label="Beat source">
+            <option value="audio">Music (auto-detect)</option>
+            <option value="tempo">Tempo clock</option>
+          </select>
+        </label>
+        <div class="prm"><label for="bpm">Tempo</label><output id="bpmOut">118</output><input id="bpm" type="range" min="60" max="200" value="118"></div>
+        <div class="prm"><label for="beatSens">Music sensitivity</label><output id="sensOut">6</output><input id="beatSens" type="range" min="1" max="10" value="6"></div>
+        <button class="btn" id="tapTempo" type="button">Tap tempo</button>
+        <p class="hint" id="beatStatus"></p>
+      </div>
+    </section>
+  </aside>
+
+  <main class="stage" id="stage">
+    <div class="transport">
+      <div class="group">
+        <button class="btn mobile-only" id="navOpen" type="button"><span data-icon="folder"></span>Library</button>
+        <button class="btn primary" id="playAll" type="button"></button>
+        <button class="btn mono" id="back10" type="button" aria-label="Back 10 seconds">−10s</button>
+        <button class="btn mono" id="fwd10" type="button" aria-label="Forward 10 seconds">+10s</button>
+        <button class="btn icon" id="restart" type="button" aria-label="Restart all" title="Restart all"><span data-icon="restart"></span></button>
+        <button class="btn" id="shuffleBtn" type="button" title="Put a random video on every screen (S)"><span data-icon="shuffle"></span>Shuffle</button>
+        <button class="btn" id="autoBtn" type="button" aria-pressed="false" title="When a video ends, play a random one on that screen"><span data-icon="shuffle"></span>Auto-shuffle</button>
+      </div>
+      <div class="scrub-wrap">
+        <input class="scrub" id="scrub" type="range" min="0" max="1000" value="0" aria-label="Seek all videos together">
+        <span class="time" id="time">—</span>
+      </div>
+      <div class="group">
+        <label class="field"><span>Filter</span><select id="filterAll" aria-label="Filter for all screens"></select></label>
+        <button class="btn" id="mixFilters" type="button" title="Give every screen a random filter"><span data-icon="sparkle"></span>Mix</button>
+        <label class="field"><span>Speed</span>
+          <select id="speed">
+            <option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option>
+            <option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option>
+          </select>
+        </label>
+        <label class="field"><span>Fit</span>
+          <select id="fit"><option value="contain" selected>Whole</option><option value="cover">Fill</option></select>
+        </label>
+        <button class="btn icon" id="muteAll" type="button"></button>
+        <button class="btn icon" id="loopAll" type="button" aria-pressed="false" aria-label="Loop all" title="Loop all"><span data-icon="loop"></span></button>
+        <button class="btn icon" id="fsBtn" type="button" aria-label="Fullscreen" title="Fullscreen"><span data-icon="fullscreen"></span></button>
+      </div>
+    </div>
+    <div class="grid" id="grid" data-fit="contain"></div>
+  </main>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad = n => String(n).padStart(2, '0');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const coll = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+const byName = (a, b) => coll.compare(a.name, b.name);
+const fmt = s => {
+  if (!Number.isFinite(s)) return '0:00';
+  s = Math.floor(s);
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+  return h ? `${h}:${pad(m)}:${pad(x)}` : `${m}:${pad(x)}`;
+};
+
+const I = {
+  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  chev: '<path d="M9 6l6 6-6 6"/>',
+  chevL: '<path d="M15 6l-6 6 6 6"/>',
+  film: '<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M10 9.5l5 2.5-5 2.5z"/>',
+  play: '<path d="M7 4.5v15l12-7.5z" fill="currentColor"/>',
+  pause: '<path d="M8 5v14M16 5v14" stroke-width="3.2"/>',
+  volume: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 9a4 4 0 0 1 0 6"/>',
+  mute: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 9l4 6M21 9l-4 6"/>',
+  zoom: '<path d="M15 4h5v5M9 20H4v-5M20 4l-6.5 6.5M4 20l6.5-6.5"/>',
+  shrink: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  restart: '<path d="M4 12a8 8 0 1 0 3-6.2M4 4v5h5"/>',
+  loop: '<path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/>',
+  fullscreen: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+  shuffle: '<path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/>',
+  sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15v4M17 17h4"/>'
+};
+const icon = (n, s = 16) => `<svg class="ic" viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[n]}</svg>`;
+document.querySelectorAll('[data-icon]').forEach(el => el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon)));
+
+/* ---------- filters ---------- */
+const FILTERS = [
+  { id: 'none', name: 'No filter', css: '' },
+  { id: 'bw', name: 'Black & white', css: 'grayscale(1) contrast(1.1)' },
+  { id: 'sepia', name: 'Sepia', css: 'sepia(1)' },
+  { id: 'vintage', name: 'Vintage', css: 'sepia(.55) contrast(1.15) saturate(1.3) brightness(.95)' },
+  { id: 'warm', name: 'Warm', css: 'sepia(.35) saturate(1.4) brightness(1.05)' },
+  { id: 'cool', name: 'Cool', css: 'sepia(.4) hue-rotate(170deg) saturate(1.6)' },
+  { id: 'vivid', name: 'Vivid', css: 'saturate(2) contrast(1.1)' },
+  { id: 'contrast', name: 'High contrast', css: 'contrast(1.8) saturate(1.3)' },
+  { id: 'moody', name: 'Moody', css: 'brightness(.75) contrast(1.35) saturate(.8)' },
+  { id: 'neon', name: 'Neon', css: 'saturate(3) contrast(1.4) brightness(1.1)' },
+  { id: 'invert', name: 'Invert', css: 'invert(1)' },
+  { id: 'xray', name: 'X-ray', css: 'invert(1) grayscale(1) contrast(1.4)' },
+  { id: 'night', name: 'Night vision', css: 'grayscale(1) sepia(1) hue-rotate(60deg) saturate(4) brightness(1.1) contrast(1.2)' },
+  { id: 'dream', name: 'Dreamy blur', css: 'blur(3px) brightness(1.15) saturate(1.4)', tf: 'scale(1.06)' },
+  { id: 'blur', name: 'Heavy blur', css: 'blur(10px)', tf: 'scale(1.15)' },
+  { id: 'spin', name: 'Color spin', css: '' },
+  { id: 'mirror', name: 'Mirror', css: '', tf: 'scaleX(-1)' },
+  { id: 'flip', name: 'Upside down', css: '', tf: 'scaleY(-1)' }
+];
+const FMAP = new Map(FILTERS.map(f => [f.id, f]));
+const FILTER_OPTS = FILTERS.map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
+const filterAllSel = $('#filterAll');
+filterAllSel.innerHTML = FILTER_OPTS + '<option value="mixed" hidden>Mixed</option>';
+const globalFilter = () => (FMAP.has(filterAllSel.value) ? filterAllSel.value : 'none');
+function applyFilter(c, id) {
+  const f = FMAP.get(id) || FMAP.get('none');
+  c.filter = f.id;
+  [c.video, c.cv].forEach(el => {
+    el.style.filter = f.css || '';
+    el.style.transform = f.tf || '';
+    el.classList.toggle('fx-spin', f.id === 'spin');
+  });
+  if (c.btn.filter) c.btn.filter.value = f.id;
+}
+
+/* ---------- state ---------- */
+const state = { cols: 2, rows: 2, rate: 1, loop: false, muteAll: null, auto: false };
+const library = new Map();
+const byKey = new Map();
+let uid = 0;
+let treeRoot = null;
+let nodeByPath = new Map();
+const expanded = new Set();
+let selPath = null, includeSub = true, offset = 0, folderMode = false, active = 0, zoomIndex = null;
+const cells = [];
+let lastScrub = 0;
+
+const grid = $('#grid'), stage = $('#stage'), shell = $('#shell');
+const treeEl = $('#tree'), folderBar = $('#folderBar'), libNote = $('#libNote');
+const playAllBtn = $('#playAll'), muteBtn = $('#muteAll'), loopBtn = $('#loopAll');
+const scrub = $('#scrub'), timeEl = $('#time');
+const shuffleBtn = $('#shuffleBtn'), autoBtn = $('#autoBtn');
+
+/* ---------- demo clips (generated on a canvas, so the wall works before any file is opened) ---------- */
+function label(ctx, W, H, t, name) {
+  ctx.font = '600 20px system-ui, sans-serif';
+  const tw = ctx.measureText(name).width;
+  ctx.fillStyle = 'rgba(0,0,0,.6)';
+  ctx.fillRect(12, H - 46, tw + 24, 34);
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(name, 24, H - 29);
+  ctx.font = '500 14px ui-monospace, Menlo, monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText(t.toFixed(1) + 's', W - 14, 22);
+  ctx.textAlign = 'left';
+}
+const DEMOS = {
+  bars(ctx, W, H, t, name) {
+    const cols = ['#d0d0d0', '#d0d000', '#00d0d0', '#00d000', '#d000d0', '#d00000', '#0000d0'];
+    const w = W / 7, sh = t * 70, k = Math.floor(sh / w), off = sh % w;
+    for (let i = -1; i < 8; i++) { ctx.fillStyle = cols[((i + k) % 7 + 7) % 7]; ctx.fillRect(i * w - off, 0, w + 1, H * 0.7); }
+    const g = ctx.createLinearGradient(0, 0, W, 0); g.addColorStop(0, '#000'); g.addColorStop(1, '#fff');
+    ctx.fillStyle = g; ctx.fillRect(0, H * 0.7, W, H * 0.3);
+    label(ctx, W, H, t, name);
+  },
+  checker(ctx, W, H, t, name) {
+    const s = 40, off = (t * 50) % (s * 2);
+    for (let y = -2; y * s < H + s * 2; y++) for (let x = -2; x * s < W + s * 2; x++) {
+      ctx.fillStyle = ((x + y) & 1) ? `hsl(${(t * 24) % 360} 55% 38%)` : '#e6eaee';
+      ctx.fillRect(x * s + off, y * s, s, s);
+    }
+    label(ctx, W, H, t, name);
+  },
+  ball(ctx, W, H, t, name) {
+    ctx.fillStyle = '#141a16'; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(255,255,255,.07)'; ctx.lineWidth = 1; ctx.beginPath();
+    for (let x = 0; x < W; x += 40) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+    for (let y = 0; y < H; y += 40) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+    ctx.stroke();
+    const tri = v => { const m = v % 2; return m < 1 ? m : 2 - m; };
+    const r = 22, x = r + (W - 2 * r) * tri(t * .35), y = r + (H - 2 * r) * tri(t * .52);
+    ctx.fillStyle = '#ffb347'; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    label(ctx, W, H, t, name);
+  },
+  scope(ctx, W, H, t, name) {
+    ctx.fillStyle = t < .1 ? '#060e0a' : 'rgba(6,14,10,.18)'; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = '#57e389'; ctx.lineWidth = 2.5; ctx.beginPath();
+    for (let k = 0; k <= 60; k++) {
+      const u = t * 2.2 - k * .012, x = W / 2 + Math.sin(3 * u + t * .3) * W * .38, y = H / 2 + Math.sin(2 * u) * H * .38;
+      k ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.stroke();
+    label(ctx, W, H, t, name);
+  },
+  clock(ctx, W, H, t, name) {
+    ctx.fillStyle = '#0c1a22'; ctx.fillRect(0, 0, W, H);
+    const d = new Date(), p = (n, l = 2) => String(n).padStart(l, '0');
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#e8f4f6'; ctx.font = '700 88px ui-monospace, Menlo, monospace';
+    ctx.fillText(`${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`, W / 2, H / 2 - 24);
+    ctx.fillStyle = '#5fd0d4'; ctx.font = '500 28px ui-monospace, Menlo, monospace';
+    ctx.fillText('.' + p(Math.floor(d.getMilliseconds() / 10)), W / 2, H / 2 + 36);
+    ctx.strokeStyle = 'rgba(95,208,212,.25)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(40, H - 84); ctx.lineTo(W - 40, H - 84); ctx.stroke();
+    ctx.strokeStyle = '#5fd0d4'; ctx.beginPath(); ctx.moveTo(40, H - 84);
+    ctx.lineTo(40 + (W - 80) * ((d.getSeconds() * 1000 + d.getMilliseconds()) / 60000), H - 84); ctx.stroke();
+    label(ctx, W, H, t, name);
+  },
+  wave(ctx, W, H, t, name) {
+    ctx.fillStyle = '#10141c'; ctx.fillRect(0, 0, W, H);
+    [190, 210, 260, 330, 20].forEach((h, i) => {
+      ctx.strokeStyle = `hsl(${h} 80% 62%)`; ctx.lineWidth = 3; ctx.beginPath();
+      for (let x = 0; x <= W; x += 4) {
+        const y = H / 2 + Math.sin(x / (60 + i * 18) + t * (1 + i * .35)) * (40 + i * 14) * Math.sin(t * .4 + i);
+        x ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      }
+      ctx.stroke();
+    });
+    label(ctx, W, H, t, name);
+  }
+};
+function startDemo(type, name) {
+  const cv = document.createElement('canvas'); cv.width = 640; cv.height = 360;
+  const ctx = cv.getContext('2d');
+  const draw = DEMOS[type], t0 = performance.now();
+  let on = true, raf = 0;
+  const loop = () => { if (!on) return; draw(ctx, 640, 360, (performance.now() - t0) / 1000, name); raf = requestAnimationFrame(loop); };
+  loop();
+  const stream = cv.captureStream(30);
+  return { stream, stop() { on = false; cancelAnimationFrame(raf); stream.getTracks().forEach(tr => tr.stop()); } };
+}
+[
+  ['Test patterns', 'Color bars', 'bars'], ['Test patterns', 'Checkerboard', 'checker'],
+  ['Motion', 'Bouncing ball', 'ball'], ['Motion', 'Oscilloscope', 'scope'],
+  ['Motion', 'Timecode', 'clock'], ['Motion', 'Waveforms', 'wave']
+].forEach(([d, n, t]) => { const it = { id: 'd' + (++uid), name: n, dir: 'Demo clips/' + d, demo: t }; library.set(it.id, it); });
+
+/* ---------- library tree ---------- */
+function rebuildTree() {
+  const root = { name: '', path: '', children: new Map(), items: [] };
+  nodeByPath = new Map([['', root]]);
+  for (const it of library.values()) {
+    let node = root, p = '';
+    for (const seg of it.dir.split('/')) {
+      p = p ? p + '/' + seg : seg;
+      let c = node.children.get(seg);
+      if (!c) { c = { name: seg, path: p, children: new Map(), items: [] }; node.children.set(seg, c); nodeByPath.set(p, c); }
+      node = c;
+    }
+    node.items.push(it);
+  }
+  treeRoot = root;
+}
+const countAll = n => n.items.length + [...n.children.values()].reduce((a, c) => a + countAll(c), 0);
+
+function renderNode(node, depth, used) {
+  let h = '';
+  for (const f of [...node.children.values()].sort(byName)) {
+    const open = expanded.has(f.path), sel = f.path === selPath, pl = depth * 14 + 2;
+    h += `<li><div class="row${sel ? ' sel' : ''}" style="padding-left:${pl}px">
+      <button class="chev" type="button" data-act="toggle" data-path="${esc(f.path)}" data-key="t:${esc(f.path)}" aria-expanded="${open}" aria-label="${open ? 'Collapse' : 'Expand'} ${esc(f.name)}">${icon('chev', 14)}</button>
+      <button class="name" type="button" data-act="folder" data-path="${esc(f.path)}" data-key="f:${esc(f.path)}" title="${esc(f.path)}">${icon('folder')}<span class="t">${esc(f.name)}</span></button>
+      <span class="count">${countAll(f)}</span></div>${open ? `<ul>${renderNode(f, depth + 1, used)}</ul>` : ''}</li>`;
+  }
+  for (const it of [...node.items].sort(byName)) {
+    const pl = depth * 14 + 2 + 22;
+    h += `<li><div class="row" style="padding-left:${pl}px">
+      <div class="name vid" role="button" tabindex="0" draggable="true" data-act="video" data-id="${it.id}" data-key="v:${it.id}" title="${esc(it.name)}">${icon('film')}<span class="t">${esc(it.name)}</span>${used.has(it.id) ? '<span class="dot" title="On a screen"></span>' : ''}</div></div></li>`;
+  }
+  return h;
+}
+function renderTree() {
+  const used = new Set(cells.filter(c => c.item).map(c => c.item.id));
+  treeEl.innerHTML = renderNode(treeRoot, 0, used);
+}
+function folderItems() {
+  const node = nodeByPath.get(selPath);
+  if (!node) return [];
+  const out = [];
+  const walk = (n, deep) => {
+    out.push(...[...n.items].sort(byName));
+    if (deep) [...n.children.values()].sort(byName).forEach(c => walk(c, true));
+  };
+  walk(node, includeSub);
+  return out;
+}
+function renderFooter() {
+  if (!selPath || !nodeByPath.has(selPath)) {
+    folderBar.innerHTML = '<p class="hint">Click a folder to fill the screens with its videos. Click a single video to put it on the outlined screen.</p>';
+    return;
+  }
+  const list = folderItems(), n = cells.length;
+  const from = list.length ? offset + 1 : 0, to = Math.min(offset + n, list.length);
+  folderBar.innerHTML = `
+    <div class="fb-row"><span class="lbl">Showing</span><strong class="fb-name" title="${esc(selPath)}">${esc(selPath.split('/').pop())}</strong></div>
+    <label class="check"><input type="checkbox" id="subChk" data-key="sub" ${includeSub ? 'checked' : ''}><span>Include subfolders</span></label>
+    <div class="fb-row">
+      <button class="btn icon" type="button" data-act="prev" data-key="prev" aria-label="Previous set of videos" ${offset <= 0 ? 'disabled' : ''}>${icon('chevL')}</button>
+      <span class="range">${from}–${to} of ${list.length}</span>
+      <button class="btn icon" type="button" data-act="next" data-key="next" aria-label="Next set of videos" ${offset + n >= list.length ? 'disabled' : ''}>${icon('chev')}</button>
+    </div>
+    <button class="btn" type="button" data-act="clear" data-key="clear">Clear screens</button>`;
+}
+function keepFocus(fn) {
+  const a = document.activeElement, key = a && a.dataset && a.dataset.key;
+  fn();
+  if (key) { const n = document.querySelector(`[data-key="${CSS.escape(key)}"]`); if (n && !n.disabled) n.focus({ preventScroll: true }); }
+}
+
+/* ---------- screens ---------- */
+const PRESETS = [[1, 1], [2, 1], [3, 1], [2, 2], [3, 2], [3, 3], [4, 3], [4, 4]];
+$('#presets').innerHTML = PRESETS.map(([c, r]) =>
+  `<button class="preset" type="button" data-c="${c}" data-r="${r}" aria-pressed="false" aria-label="${c * r} screen${c * r > 1 ? 's' : ''}, ${c} by ${r}">
+    <span class="glyph" style="grid-template-columns:repeat(${c},1fr);grid-template-rows:repeat(${r},1fr)">${'<i></i>'.repeat(c * r)}</span><b>${c * r}</b></button>`).join('');
+$('#presets').addEventListener('click', e => {
+  const b = e.target.closest('.preset'); if (b) setLayout(+b.dataset.c, +b.dataset.r);
+});
+$('#colMinus').onclick = () => setLayout(state.cols - 1, state.rows);
+$('#colPlus').onclick = () => setLayout(state.cols + 1, state.rows);
+$('#rowMinus').onclick = () => setLayout(state.cols, state.rows - 1);
+$('#rowPlus').onclick = () => setLayout(state.cols, state.rows + 1);
+
+function renderLayoutUI() {
+  const n = state.cols * state.rows;
+  $('#readout').textContent = `${state.cols} × ${state.rows} = ${n}`;
+  $('#colVal').textContent = state.cols; $('#rowVal').textContent = state.rows;
+  $('#colMinus').disabled = state.cols <= 1; $('#colPlus').disabled = state.cols >= 6;
+  $('#rowMinus').disabled = state.rows <= 1; $('#rowPlus').disabled = state.rows >= 5;
+  document.querySelectorAll('.preset').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.c === state.cols && +b.dataset.r === state.rows)));
+  $('#perfHint').hidden = n <= 9;
+}
+function setLayout(cols, rows) {
+  state.cols = clamp(cols, 1, 6); state.rows = clamp(rows, 1, 5);
+  const n = state.cols * state.rows;
+  while (cells.length < n) { const c = buildCell(cells.length); applyFilter(c, globalFilter()); cells.push(c); grid.appendChild(c.el); fxAutoApply(c); }
+  while (cells.length > n) { const c = cells.pop(); fxStop(c); release(c); c.el.remove(); }
+  grid.style.gridTemplateColumns = `repeat(${state.cols},minmax(0,1fr))`;
+  grid.style.gridTemplateRows = `repeat(${state.rows},minmax(0,1fr))`;
+  if (active >= n) active = n - 1;
+  if (zoomIndex !== null && zoomIndex >= n) zoomIndex = null;
+  applyZoom(); setActive(active);
+  if (folderMode) fillFromFolder(); else refreshUI();
+}
+
+/* ---------- cells ---------- */
+function buildCell(i) {
+  const el = document.createElement('div');
+  el.className = 'cell'; el.dataset.i = i;
+  el.innerHTML = `
+    <video playsinline preload="metadata"></video>
+    <canvas class="fxcv" hidden></canvas>
+    <div class="empty"><b>Screen ${pad(i + 1)}</b><span>Pick a video from the library, or drop a file here.</span></div>
+    <div class="err" hidden>This browser can't play this file. MP4 (H.264) and WebM work best.</div>
+    <div class="bar top"><span class="idx">${pad(i + 1)}</span><span class="title"></span></div>
+    <div class="bar bottom">
+      <select class="csel" data-f aria-label="Filter for screen ${i + 1}" title="Filter">${FILTER_OPTS}</select>
+      <button class="cbtn" type="button" data-c="play"></button>
+      <button class="cbtn" type="button" data-c="mute"></button>
+      <button class="cbtn" type="button" data-c="zoom"></button>
+      <button class="cbtn" type="button" data-c="clear" aria-label="Clear screen ${i + 1}" title="Clear screen">${icon('x')}</button>
+    </div>`;
+  const c = { i, el, video: el.querySelector('video'), cv: el.querySelector('.fxcv'), fx: null, titleEl: el.querySelector('.title'), errEl: el.querySelector('.err'),
+    btn: { play: el.querySelector('[data-c=play]'), mute: el.querySelector('[data-c=mute]'), zoom: el.querySelector('[data-c=zoom]'), filter: el.querySelector('.csel') },
+    item: null, url: null, demo: null, failed: false, filter: 'none' };
+  const v = c.video;
+  ['play', 'pause', 'ended', 'volumechange'].forEach(ev => v.addEventListener(ev, () => { updateCellUI(c); refreshTransport(); }));
+  v.addEventListener('loadedmetadata', () => { v.playbackRate = state.rate; tick(); });
+  v.addEventListener('ended', () => { if (state.auto && c.item) playRandomOn(c); });
+  v.addEventListener('error', () => {
+    if (!c.item) return;
+    c.failed = true;
+    const er = v.error, code = er ? er.code : 0;
+    c.errMsg = code === 3 ? "The video couldn't be decoded. Re-encode it as H.264 video with AAC audio."
+      : code === 2 ? "The file couldn't be read. Try opening the folder again."
+      : "This MP4 uses a codec the browser can't play, usually H.265/HEVC video or AC3/DTS audio. Re-encode it as H.264 video with AAC audio.";
+    if (er && er.message) c.errMsg += ' [' + er.message + ']';
+    if (c.item.file) c.errMsg += ` File type: ${c.item.file.type || 'unknown'}. Error code: ${code}.`;
+    updateCellUI(c);
+  });
+  updateCellUI(c);
+  return c;
+}
+function updateCellUI(c) {
+  const v = c.video, filled = !!c.item, n = c.i + 1;
+  c.el.classList.toggle('filled', filled);
+  c.titleEl.textContent = filled ? c.item.name : '';
+  c.errEl.hidden = !c.failed;
+  if (c.failed && c.errMsg) c.errEl.textContent = c.errMsg;
+  c.btn.play.innerHTML = icon(v.paused ? 'play' : 'pause');
+  c.btn.play.setAttribute('aria-label', `${v.paused ? 'Play' : 'Pause'} screen ${n}`);
+  c.btn.mute.innerHTML = icon(v.muted ? 'mute' : 'volume');
+  c.btn.mute.setAttribute('aria-label', `${v.muted ? 'Unmute' : 'Mute'} screen ${n}`);
+  const z = zoomIndex === c.i;
+  c.btn.zoom.innerHTML = icon(z ? 'shrink' : 'zoom');
+  c.btn.zoom.setAttribute('aria-label', `${z ? 'Show all screens' : 'Enlarge screen ' + n}`);
+  c.btn.zoom.title = z ? 'Show all screens' : 'Enlarge (or double-click)';
+}
+function release(c) {
+  const v = c.video;
+  try { v.pause(); } catch (e) {}
+  if (c.demo) { c.demo.stop(); c.demo = null; }
+  v.srcObject = null; v.removeAttribute('src'); v.load();
+  if (c.url) { URL.revokeObjectURL(c.url); c.url = null; }
+  c.item = null; c.failed = false;
+}
+function clearCell(i) { const c = cells[i]; if (!c) return; release(c); updateCellUI(c); }
+function assign(i, item) {
+  const c = cells[i]; if (!c) return;
+  release(c);
+  c.item = item; c.failed = false;
+  const v = c.video;
+  if (item.demo) { c.demo = startDemo(item.demo, item.name); v.srcObject = c.demo.stream; }
+  else { c.url = URL.createObjectURL(item.file); v.src = c.url; }
+  v.muted = state.muteAll === null ? cells.length > 1 : state.muteAll;
+  v.defaultPlaybackRate = state.rate; v.playbackRate = state.rate; v.loop = state.loop;
+  const p = v.play();
+  if (p && p.catch) p.catch(err => { if (err && err.name === 'NotAllowedError') { v.muted = true; v.play().catch(() => {}); } });
+  updateCellUI(c);
+}
+function setActive(i) {
+  active = clamp(i, 0, cells.length - 1);
+  cells.forEach(c => c.el.classList.toggle('active', c.i === active));
+  fxLabel();
+}
+function applyZoom() {
+  grid.classList.toggle('zoomed', zoomIndex !== null);
+  cells.forEach(c => { c.el.classList.toggle('is-zoom', c.i === zoomIndex); updateCellUI(c); });
+}
+function toggleZoom(i) { zoomIndex = zoomIndex === i ? null : i; applyZoom(); }
+
+function fillFromFolder() {
+  const list = folderItems(), n = cells.length;
+  if (offset >= list.length) offset = Math.max(0, list.length - n);
+  for (let i = 0; i < n; i++) {
+    const it = list[offset + i];
+    if (it) assign(i, it); else clearCell(i);
+  }
+  folderMode = true; setActive(0); refreshUI();
+}
+function selectFolder(path) {
+  selPath = path; expanded.add(path); offset = 0; fillFromFolder();
+}
+
+/* ---------- random play ---------- */
+const hasFolder = () => !!(selPath && nodeByPath.has(selPath) && folderItems().length);
+function pool() {
+  const list = hasFolder() ? folderItems() : [];
+  return list.length ? list : [...library.values()];
+}
+function shuffled(a) {
+  const b = a.slice();
+  for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; }
+  return b;
+}
+function shuffleAll() {
+  const list = pool(); if (!list.length) return;
+  let order = [];
+  for (let i = 0; i < cells.length; i++) { if (!order.length) order = shuffled(list); assign(i, order.pop()); }
+  folderMode = false; setActive(0); refreshUI();
+  note(`Shuffled ${cells.length} screen${cells.length > 1 ? 's' : ''} from ${hasFolder() ? '"' + selPath.split('/').pop() + '"' : 'the whole library'}.`);
+}
+function playRandomOn(c) {
+  const list = pool(); if (!list.length) return;
+  let opts = list.filter(it => it !== c.item);
+  if (!opts.length) opts = list;
+  assign(c.i, opts[Math.floor(Math.random() * opts.length)]);
+  refreshUI();
+}
+
+/* ---------- transport ---------- */
+const anyPlaying = () => cells.some(c => c.item && !c.video.paused && !c.video.ended);
+const seekable = () => cells.filter(c => c.item && !c.failed && Number.isFinite(c.video.duration) && c.video.duration > 0);
+function refreshTransport() {
+  const playing = anyPlaying(), filled = cells.filter(c => c.item);
+  playAllBtn.innerHTML = icon(playing ? 'pause' : 'play') + `<span>${playing ? 'Pause all' : 'Play all'}</span>`;
+  const allMuted = filled.length > 0 && filled.every(c => c.video.muted);
+  muteBtn.innerHTML = icon(allMuted ? 'mute' : 'volume');
+  muteBtn.setAttribute('aria-pressed', String(allMuted));
+  muteBtn.setAttribute('aria-label', allMuted ? 'Unmute all' : 'Mute all');
+  muteBtn.title = allMuted ? 'Unmute all' : 'Mute all';
+  loopBtn.setAttribute('aria-pressed', String(state.loop));
+  autoBtn.setAttribute('aria-pressed', String(state.auto));
+  const has = filled.length > 0;
+  [playAllBtn, muteBtn, $('#restart')].forEach(b => b.disabled = !has);
+  const can = seekable().length > 0;
+  [$('#back10'), $('#fwd10')].forEach(b => b.disabled = !can);
+}
+function tick() {
+  const list = seekable(), c = list[0];
+  if (!c) {
+    scrub.disabled = true; scrub.value = 0;
+    timeEl.textContent = cells.some(x => x.demo) ? 'Live demo clips' : '—';
+    return;
+  }
+  scrub.disabled = false;
+  if (performance.now() - lastScrub > 600) scrub.value = Math.round(c.video.currentTime / c.video.duration * 1000);
+  timeEl.textContent = `${fmt(c.video.currentTime)} / ${fmt(c.video.duration)}`;
+}
+setInterval(tick, 250);
+
+playAllBtn.onclick = () => {
+  if (anyPlaying()) cells.forEach(c => c.item && c.video.pause());
+  else cells.forEach(c => c.item && c.video.play().catch(() => {}));
+};
+$('#back10').onclick = () => seekable().forEach(c => { c.video.currentTime = Math.max(0, c.video.currentTime - 10); });
+$('#fwd10').onclick = () => seekable().forEach(c => { c.video.currentTime = Math.min(c.video.duration, c.video.currentTime + 10); });
+$('#restart').onclick = () => cells.forEach(c => {
+  if (!c.item) return;
+  if (Number.isFinite(c.video.duration)) c.video.currentTime = 0;
+  c.video.play().catch(() => {});
+});
+scrub.addEventListener('input', () => {
+  lastScrub = performance.now();
+  const f = scrub.value / 1000;
+  seekable().forEach(c => { c.video.currentTime = f * c.video.duration; });
+});
+$('#speed').onchange = e => {
+  state.rate = +e.target.value;
+  cells.forEach(c => { c.video.defaultPlaybackRate = state.rate; c.video.playbackRate = state.rate; });
+};
+$('#fit').onchange = e => { grid.dataset.fit = e.target.value; };
+muteBtn.onclick = () => {
+  const filled = cells.filter(c => c.item);
+  const allMuted = filled.length > 0 && filled.every(c => c.video.muted);
+  state.muteAll = !allMuted;
+  filled.forEach(c => { c.video.muted = state.muteAll; });
+  refreshTransport();
+};
+loopBtn.onclick = () => {
+  state.loop = !state.loop;
+  if (state.loop) state.auto = false;
+  cells.forEach(c => { c.video.loop = state.loop; });
+  refreshTransport();
+};
+shuffleBtn.onclick = () => shuffleAll();
+filterAllSel.onchange = () => cells.forEach(c => applyFilter(c, globalFilter()));
+$('#mixFilters').onclick = () => {
+  const ids = shuffled(FILTERS.filter(f => f.id !== 'none').map(f => f.id));
+  cells.forEach((c, i) => applyFilter(c, ids[i % ids.length]));
+  filterAllSel.value = 'mixed';
+};
+autoBtn.onclick = () => {
+  state.auto = !state.auto;
+  if (state.auto && state.loop) { state.loop = false; cells.forEach(c => { c.video.loop = false; }); }
+  refreshTransport();
+};
+const fsBtn = $('#fsBtn');
+if (!document.fullscreenEnabled || !stage.requestFullscreen) fsBtn.hidden = true;
+fsBtn.onclick = () => {
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  else stage.requestFullscreen().catch(() => {});
+};
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && zoomIndex !== null) { zoomIndex = null; applyZoom(); return; }
+  if (e.code === 'Space' && !e.target.closest('button,input,select,textarea,[role="button"],[contenteditable]')) {
+    e.preventDefault(); playAllBtn.click();
+  }
+  if ((e.key === 's' || e.key === 'S') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest('input,select,textarea,[contenteditable]')) shuffleAll();
+});
+
+/* ---------- grid interaction ---------- */
+grid.addEventListener('click', e => {
+  const cellEl = e.target.closest('.cell'); if (!cellEl) return;
+  const c = cells[+cellEl.dataset.i], btn = e.target.closest('button[data-c]');
+  setActive(c.i);
+  if (btn) {
+    const a = btn.dataset.c;
+    if (a === 'play') c.video.paused ? c.video.play().catch(() => {}) : c.video.pause();
+    else if (a === 'mute') c.video.muted = !c.video.muted;
+    else if (a === 'zoom') toggleZoom(c.i);
+    else if (a === 'clear') { clearCell(c.i); folderMode = false; refreshUI(); }
+    return;
+  }
+  if (c.item && (e.target.tagName === 'VIDEO' || e.target.classList.contains('fxcv'))) c.video.paused ? c.video.play().catch(() => {}) : c.video.pause();
+});
+grid.addEventListener('dblclick', e => {
+  const cellEl = e.target.closest('.cell');
+  if (cellEl && cellEl.classList.contains('filled') && !e.target.closest('button,select')) toggleZoom(+cellEl.dataset.i);
+});
+grid.addEventListener('change', e => {
+  const s = e.target.closest('select[data-f]'); if (!s) return;
+  applyFilter(cells[+s.closest('.cell').dataset.i], s.value);
+});
+grid.addEventListener('dragover', e => {
+  const cellEl = e.target.closest('.cell'); if (!cellEl) return;
+  e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+  grid.querySelectorAll('.cell.drop').forEach(x => { if (x !== cellEl) x.classList.remove('drop'); });
+  cellEl.classList.add('drop');
+});
+grid.addEventListener('dragleave', e => {
+  const cellEl = e.target.closest('.cell');
+  if (cellEl && !cellEl.contains(e.relatedTarget)) cellEl.classList.remove('drop');
+});
+grid.addEventListener('drop', e => {
+  const cellEl = e.target.closest('.cell'); if (!cellEl) return;
+  e.preventDefault();
+  grid.querySelectorAll('.cell.drop').forEach(x => x.classList.remove('drop'));
+  const i = +cellEl.dataset.i, files = [...(e.dataTransfer.files || [])];
+  if (files.length) {
+    const { added, skipped } = addFiles(files, 'Dropped files');
+    rebuildTree();
+    if (added.length) {
+      expanded.add('Dropped files');
+      added.forEach((it, k) => { if (cells[i + k]) assign(i + k, it); });
+      folderMode = false; setActive(Math.min(i + added.length, cells.length - 1));
+      note(`${added.length} video${added.length > 1 ? 's' : ''} dropped${skipped ? `, ${skipped} other file${skipped > 1 ? 's' : ''} skipped` : ''}.`);
+    } else note('No video files in that drop.');
+    refreshUI(); return;
+  }
+  const raw = e.dataTransfer.getData('text/plain');
+  if (raw.startsWith('vw:')) {
+    const it = library.get(raw.slice(3));
+    if (it) { assign(i, it); folderMode = false; setActive(i); refreshUI(); }
+  }
+});
+['dragover', 'drop'].forEach(ev => document.addEventListener(ev, e => {
+  if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault();
+}));
+
+/* ---------- library interaction ---------- */
+const note = msg => { libNote.textContent = msg; };
+function assignFromTree(id) {
+  const it = library.get(id); if (!it) return;
+  assign(active, it); folderMode = false;
+  setActive((active + 1) % cells.length);
+  refreshUI();
+}
+treeEl.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const a = b.dataset.act;
+  if (a === 'toggle') { const p = b.dataset.path; expanded.has(p) ? expanded.delete(p) : expanded.add(p); refreshUI(); }
+  else if (a === 'folder') selectFolder(b.dataset.path);
+  else if (a === 'video') assignFromTree(b.dataset.id);
+});
+treeEl.addEventListener('keydown', e => {
+  const b = e.target.closest('[role="button"][data-act="video"]');
+  if (b && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); assignFromTree(b.dataset.id); }
+});
+treeEl.addEventListener('dragstart', e => {
+  const b = e.target.closest('[data-id]'); if (!b) return;
+  e.dataTransfer.setData('text/plain', 'vw:' + b.dataset.id);
+  e.dataTransfer.effectAllowed = 'copy';
+});
+folderBar.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const a = b.dataset.act, n = cells.length;
+  if (a === 'prev') { offset = Math.max(0, offset - n); fillFromFolder(); }
+  else if (a === 'next') { offset += n; fillFromFolder(); }
+  else if (a === 'clear') { cells.forEach((c, i) => clearCell(i)); folderMode = false; refreshUI(); }
+});
+folderBar.addEventListener('change', e => {
+  if (e.target.id === 'subChk') { includeSub = e.target.checked; offset = 0; fillFromFolder(); }
+});
+
+const isVideo = f => (f.type && f.type.startsWith('video/')) || /\.(mp4|m4v|webm|mov|ogv|mkv|avi|mpg|mpeg|3gp)$/i.test(f.name);
+function addFiles(list, fallbackDir) {
+  const added = []; let skipped = 0;
+  for (const f of list) {
+    if (!isVideo(f)) { skipped++; continue; }
+    const rel = f.webkitRelativePath;
+    const dir = rel ? rel.split('/').slice(0, -1).join('/') : fallbackDir;
+    const key = `${dir}/${f.name}|${f.size}|${f.lastModified}`;
+    let it = byKey.get(key);
+    if (!it) { it = { id: 'f' + (++uid), name: f.name, dir: dir || fallbackDir, file: f }; library.set(it.id, it); byKey.set(key, it); }
+    added.push(it);
+  }
+  return { added, skipped };
+}
+function onPicked(input) {
+  const files = [...input.files]; input.value = '';
+  const { added, skipped } = addFiles(files, 'Added videos');
+  rebuildTree();
+  if (!added.length) { note('No video files found. MP4, WebM and MOV work best.'); refreshUI(); return; }
+  added.forEach(it => {
+    const segs = it.dir.split('/');
+    for (let L = 1; L <= Math.min(2, segs.length); L++) expanded.add(segs.slice(0, L).join('/'));
+  });
+  note(`${added.length} video${added.length > 1 ? 's' : ''} added${skipped ? `, ${skipped} other file${skipped > 1 ? 's' : ''} skipped` : ''}.`);
+  selectFolder(added[0].dir.split('/')[0]);
+}
+$('#openFolder').onclick = () => $('#folderInput').click();
+$('#addVideos').onclick = () => $('#filesInput').click();
+$('#folderInput').addEventListener('change', e => onPicked(e.target));
+$('#filesInput').addEventListener('change', e => onPicked(e.target));
+$('#navOpen').onclick = () => shell.classList.add('nav-open');
+$('#navDone').onclick = () => shell.classList.remove('nav-open');
+
+/* ======================= FX studio ======================= */
+const TAU = Math.PI * 2;
+const lerp = (a, b, t) => a + (b - a) * t;
+const sm = t => t * t * (3 - 2 * t);
+const wrap = (x, d) => ((x % d) + d) % d;
+const PAL = ['#ff2e7e', '#ffb000', '#00d1b2', '#3ea6ff', '#c13cff'];
+const RENDER = {};
+const beatDotEl = $('#beatDot'), beatStatusEl = $('#beatStatus');
+
+function fitRect(vw, vh, W, H, cover) {
+  const s = cover ? Math.max(W / vw, H / vh) : Math.min(W / vw, H / vh);
+  const w = vw * s, h = vh * s;
+  return { x: (W - w) / 2, y: (H - h) / 2, w, h };
+}
+function rrect(ctx, x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+/* ---------- beat engine: music onsets when available, tempo clock otherwise ---------- */
+const beat = {
+  mode: 'audio', bpm: 118, sens: 1.48, count: 0, last: 0, next: 0, pulse: 0, pos: 0,
+  usedAudio: false, lvl: 0, avg: 0, prev: 0,
+  ctx: null, an: null, buf: null, tapV: null, tapSrc: null, tapUrl: null
+};
+function beatInit() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (beat.ctx) { if (beat.ctx.state === 'suspended') beat.ctx.resume().catch(() => {}); return; }
+  if (!AC) return;
+  try {
+    beat.ctx = new AC();
+    beat.an = beat.ctx.createAnalyser();
+    beat.an.fftSize = 1024; beat.an.smoothingTimeConstant = 0.2;
+    beat.buf = new Uint8Array(beat.an.frequencyBinCount);
+    if (beat.ctx.state === 'suspended') beat.ctx.resume().catch(() => {});
+  } catch (e) { beat.ctx = null; beat.an = null; }
+}
+function beatTapDrop() {
+  if (beat.tapV) { try { beat.tapV.pause(); } catch (e) {} beat.tapV.removeAttribute('src'); beat.tapV.load(); }
+  try { if (beat.tapSrc) beat.tapSrc.disconnect(); } catch (e) {}
+  beat.tapV = null; beat.tapSrc = null; beat.tapUrl = null;
+}
+/* A silent hidden copy of the playing file feeds the analyser, so beats work even when the screen is muted. */
+function beatBind() {
+  if (beat.mode !== 'audio' || !beat.ctx || !beat.an) { if (beat.tapV || beat.tapUrl) beatTapDrop(); return; }
+  const c = cells.find(x => x.fx && x.item && x.url && !x.video.paused) || cells.find(x => x.fx && x.item && x.url);
+  if (!c) { if (beat.tapV || beat.tapUrl) beatTapDrop(); return; }
+  if (beat.ctx.state === 'suspended') beat.ctx.resume().catch(() => {});
+  if (beat.tapUrl !== c.url) {
+    beatTapDrop();
+    beat.tapUrl = c.url;
+    try {
+      const v = document.createElement('video');
+      v.preload = 'auto'; v.playsInline = true; v.muted = false; v.volume = 1; v.src = c.url;
+      const s = beat.ctx.createMediaElementSource(v);
+      s.connect(beat.an);
+      beat.tapV = v; beat.tapSrc = s;
+    } catch (e) { beat.tapV = null; beat.tapSrc = null; }
+  }
+  const v = beat.tapV, m = c.video; if (!v) return;
+  if (v.readyState > 0 && Math.abs(v.currentTime - m.currentTime) > 0.3) v.currentTime = m.currentTime;
+  v.playbackRate = m.playbackRate;
+  if (m.paused) { if (!v.paused) v.pause(); } else if (v.paused) v.play().catch(() => {});
+}
+function beatUpdate(now) {
+  const period = 60000 / beat.bpm;
+  beatBind();
+  let usedAudio = false;
+  if (beat.mode === 'audio' && beat.an && beat.tapV && !beat.tapV.paused) {
+    beat.an.getByteFrequencyData(beat.buf);
+    let s = 0; for (let i = 1; i <= 8; i++) s += beat.buf[i];
+    const e = s / 8 / 255;
+    beat.avg += (e - beat.avg) * 0.04;
+    beat.lvl = Math.max(e, beat.lvl * 0.997);
+    if (beat.lvl > 0.07) {
+      usedAudio = true;
+      if (e > beat.avg * beat.sens + 0.03 && e > beat.prev && now - beat.last > 230) { beat.count++; beat.last = now; }
+    }
+    beat.prev = e;
+  }
+  if (!usedAudio) {
+    if (!beat.next || now - beat.next > period * 4) beat.next = now;
+    while (now >= beat.next) { beat.count++; beat.last = beat.next; beat.next += period; }
+  }
+  beat.usedAudio = usedAudio;
+  const el = now - beat.last;
+  beat.pulse = Math.pow(Math.max(0, 1 - el / (period * 0.7)), 2);
+  beat.pos = beat.count + Math.min(1, el / period);
+}
+let beatStatusTs = 0;
+function beatUI(now) {
+  beatDotEl.style.setProperty('--beat', beat.pulse.toFixed(2));
+  if (now - beatStatusTs < 500) return;
+  beatStatusTs = now;
+  const hasFile = cells.some(c => c.fx && c.item && c.url);
+  let txt;
+  if (beat.usedAudio) txt = 'Following the music';
+  else if (beat.mode === 'tempo') txt = 'Tempo clock';
+  else if (!hasFile) txt = 'Demo clips have no soundtrack, so the tempo clock is in use';
+  else txt = 'No usable audio signal, so the tempo clock is in use';
+  beatStatusEl.textContent = `${txt} · ${Math.round(beat.bpm)} BPM`;
+}
+const tapTimes = [];
+function setBpm(b) { beat.bpm = b; $('#bpm').value = b; $('#bpmOut').textContent = b; beat.next = 0; }
+function tapTempo() {
+  const now = performance.now();
+  if (tapTimes.length && now - tapTimes[tapTimes.length - 1] > 2000) tapTimes.length = 0;
+  tapTimes.push(now); if (tapTimes.length > 5) tapTimes.shift();
+  if (tapTimes.length >= 2) setBpm(clamp(Math.round(60000 / ((tapTimes[tapTimes.length - 1] - tapTimes[0]) / (tapTimes.length - 1))), 60, 200));
+}
+
+/* ---------- time-shifted copies of a clip (portals and reveal layers) ---------- */
+function dropTap(t) { try { t.el.pause(); } catch (e) {} t.el.removeAttribute('src'); t.el.load(); }
+function trimTaps(f, keep) {
+  for (let i = keep; i < f.taps.length; i++) if (f.taps[i]) { dropTap(f.taps[i]); f.taps[i] = null; }
+}
+/* Returns a video element showing the clip `off` seconds away from the main playhead. Falls back to the main video. */
+function getSrc(c, slot, off) {
+  const f = c.fx, v = c.video;
+  if (!off || !c.url || !(v.duration > 0) || !Number.isFinite(v.duration)) return v;
+  let t = f.taps[slot];
+  if (!t || t.url !== c.url) {
+    if (t) dropTap(t);
+    const el = document.createElement('video');
+    el.muted = true; el.playsInline = true; el.preload = 'auto'; el.loop = true; el.src = c.url;
+    t = f.taps[slot] = { el, url: c.url, bad: false };
+    el.addEventListener('error', () => { t.bad = true; });
+  }
+  if (t.bad) return v;
+  const el = t.el, d = el.duration;
+  if (el.readyState >= 1 && d > 0) {
+    const target = wrap(v.currentTime + off, d);
+    let diff = Math.abs(el.currentTime - target); diff = Math.min(diff, d - diff);
+    if (diff > 0.35 && !el.seeking) el.currentTime = target;
+    el.playbackRate = v.playbackRate;
+    if (v.paused) { if (!el.paused) el.pause(); } else if (el.paused) el.play().catch(() => {});
+  }
+  return el.readyState >= 2 ? el : v;
+}
+
+/* ---------- per-screen effect lifecycle and render loop ---------- */
+function fxStop(c) {
+  if (!c.fx) return;
+  trimTaps(c.fx, 0);
+  c.fx = null; c.cv.hidden = true;
+}
+function fxStart(c, id, params) {
+  if (c.fx && c.fx.id === id) { c.fx.p = params; return; }
+  fxStop(c);
+  c.fx = { id, p: params, t0: performance.now(), taps: [], lastCount: beat.count, beatsSince: 0, step: 0, S: null, last: performance.now(), orient: 'h', errs: 0 };
+  fxKick();
+}
+let fxRaf = 0;
+function fxKick() { if (!fxRaf) fxRaf = requestAnimationFrame(fxLoop); }
+function fxLoop(now) {
+  fxRaf = 0;
+  const list = cells.filter(c => c.fx);
+  if (!list.length) { beatTapDrop(); return; }
+  beatUpdate(now);
+  for (const c of list) {
+    try { renderFx(c, now); }
+    catch (err) {
+      console.error(err);
+      if (c.fx && ++c.fx.errs > 5) { fxStop(c); note('An effect was turned off after an error.'); }
+    }
+  }
+  beatUI(now);
+  fxRaf = requestAnimationFrame(fxLoop);
+}
+function renderFx(c, now) {
+  const f = c.fx, v = c.video, cv = c.cv;
+  if (!c.item) { trimTaps(f, 0); cv.hidden = true; return; }
+  if (c.failed || !v.videoWidth || v.readyState < 2) { cv.hidden = true; return; }
+  const W = c.el.clientWidth, H = c.el.clientHeight;
+  if (!W || !H) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  let bw = Math.round(W * dpr), bh = Math.round(H * dpr);
+  if (bw > 1600) { bh = Math.round(bh * 1600 / bw); bw = 1600; }
+  if (cv.width !== bw || cv.height !== bh) { cv.width = bw; cv.height = bh; }
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(bw / W, 0, 0, bh / H, 0, 0);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; ctx.shadowColor = 'transparent';
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'medium';
+  cv.hidden = false;
+  RENDER[f.id](c, f, ctx, W, H, now, beat);
+}
+
+/* ---------- 1. Mirror Symmetry ---------- */
+function mirrorPanel(ctx, v, sx, sw, vh, x, y, w, h, flipX, flipY, alpha, rot, glow) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (rot) ctx.rotate(rot);
+  ctx.scale(flipX, flipY);
+  const rad = Math.min(w, h) * 0.06;
+  if (glow) {
+    ctx.shadowColor = glow; ctx.shadowBlur = 26; ctx.fillStyle = '#000'; ctx.globalAlpha = alpha * 0.9;
+    rrect(ctx, -w / 2, -h / 2, w, h, rad); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+  ctx.globalAlpha = alpha;
+  rrect(ctx, -w / 2, -h / 2, w, h, rad); ctx.clip();
+  ctx.drawImage(v, sx, 0, sw, vh, -w / 2, -h / 2, w, h);
+  ctx.restore();
+}
+/* Wedge kaleidoscope: every second wedge is a reflection, so the seams line up. */
+function kaleidoLayer(ctx, v, sx, sw, vh, asp, cx, cy, W, H, K, rot, alpha) {
+  const a = TAU / K, Rr = Math.hypot(W, H) * 0.55, hh = Rr * 0.8, ww = hh * asp;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  for (let k = 0; k < K; k++) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    if (k & 1) { ctx.rotate((k + 1) * a + rot); ctx.scale(1, -1); } else ctx.rotate(k * a + rot);
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, Rr, -0.006, a + 0.006); ctx.closePath(); ctx.clip();
+    ctx.rotate(a / 2);
+    ctx.drawImage(v, sx, 0, sw, vh, Rr * 0.34 - ww / 2, -hh / 2, ww, hh);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+RENDER.mirror = (c, f, ctx, W, H, now, B) => {
+  const P = f.p, v = c.video, vw = v.videoWidth, vh = v.videoHeight;
+  const t = (now - f.t0) / 1000, cx = W / 2, cy = H / 2;
+  let sym = P.sym, expF = 1, boost = 0;
+  if (P.cycle) {
+    // every 8 beats: collapse to the centre, switch symmetry, expand again
+    const bp = B.pos / 8, u = bp - Math.floor(bp);
+    sym = ['h', 'r', 'v'][Math.floor(bp) % 3];
+    expF = Math.min(1, u * 5, (1 - u) * 5);
+    boost = (1 - expF) * 150;
+  }
+  const pulse = B.pulse * P.pulse / 100;
+  const breathe = P.animate === 'breathe' ? 0.85 + 0.15 * Math.sin(t * 1.3) : 1;
+  const ex = clamp((P.expand / 100) * breathe + (P.animate === 'beat' ? pulse * 0.35 : 0), 0, 1) * expF;
+  const N = +P.copies, al = P.alpha / 100;
+  // the subject column, taken from the centre of the frame
+  const sw = vw * P.subject / 100, sx = (vw - sw) / 2, asp = sw / vh;
+  let hM = (sym === 'v' ? H * 0.62 : H * 0.88) * (1 + 0.1 * pulse), wM = hM * asp;
+  if (wM > W * 0.62) { wM = W * 0.62; hM = wM / asp; }
+
+  // dimmed backdrop so the subject and its reflections stand out
+  const bg = fitRect(vw, vh, W, H, true);
+  ctx.drawImage(v, bg.x, bg.y, bg.w, bg.h);
+  ctx.fillStyle = 'rgba(10,4,24,0.78)'; ctx.fillRect(0, 0, W, H);
+
+  const a0 = ((P.spin * t) + boost) * Math.PI / 180;
+  if (P.kaleido > 0) kaleidoLayer(ctx, v, sx, sw, vh, asp, cx, cy, W, H, Math.max(4, N), a0, P.kaleido / 100 * 0.9);
+
+  if (sym === 'h') {
+    const maxRank = Math.ceil(N / 2);
+    let gap = lerp(wM * 0.3, wM * 1.0, ex);
+    const avail = W / 2 - wM * 0.3;
+    if (maxRank * gap > avail) gap = avail / maxRank;
+    for (let j = N; j >= 1; j--) {
+      const rank = Math.ceil(j / 2), side = (j & 1) ? 1 : -1, sc = Math.max(0.36, 1 - 0.17 * rank);
+      mirrorPanel(ctx, v, sx, sw, vh, cx + side * rank * gap, cy, wM * sc, hM * sc, (rank & 1) ? -1 : 1, 1, al * (1 - 0.12 * (rank - 1)), 0, PAL[(rank + j) % 5]);
+    }
+  } else if (sym === 'v') {
+    const maxRank = Math.ceil(N / 2);
+    let gap = lerp(hM * 0.32, hM * 1.0, ex);
+    const avail = H / 2 - hM * 0.3;
+    if (maxRank * gap > avail) gap = avail / maxRank;
+    for (let j = N; j >= 1; j--) {
+      const rank = Math.ceil(j / 2), side = (j & 1) ? 1 : -1, sc = Math.max(0.36, 1 - 0.17 * rank);
+      mirrorPanel(ctx, v, sx, sw, vh, cx, cy + side * rank * gap, wM * sc, hM * sc, 1, (rank & 1) ? -1 : 1, al * (1 - 0.12 * (rank - 1)), 0, PAL[(rank + j) % 5]);
+    }
+  } else {
+    const ring = lerp(hM * 0.06, Math.min(W, H) * 0.34, ex), cs = lerp(0.8, 0.46, ex);
+    for (let k = 0; k < N; k++) {
+      const a = a0 + k * TAU / N - Math.PI / 2;
+      mirrorPanel(ctx, v, sx, sw, vh, cx + Math.cos(a) * ring, cy + Math.sin(a) * ring, wM * cs, hM * cs, (k & 1) ? -1 : 1, 1, al, a + Math.PI / 2, PAL[k % 5]);
+    }
+  }
+
+  // the original stays on top, full size and unflipped
+  mirrorPanel(ctx, v, sx, sw, vh, cx, cy, wM, hM, 1, 1, 1, 0, 'rgba(255,255,255,0.45)');
+  ctx.save();
+  ctx.translate(cx, cy); rrect(ctx, -wM / 2, -hM / 2, wM, hM, Math.min(wM, hM) * 0.06);
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.restore();
+  trimTaps(f, 0);
+};
+
+/* ---------- 2. Orbital Viewports ---------- */
+/* One outline that morphs between a circle (m = 0) and a heart (m = 1). */
+function shapePath(ctx, x, y, r, m, rot) {
+  const N = 72, cs = Math.cos(rot), sn = Math.sin(rot);
+  ctx.beginPath();
+  for (let k = 0; k <= N; k++) {
+    const a = k / N * TAU, s = Math.sin(a), co = Math.cos(a);
+    const hx = (16 * s * s * s) / 17;
+    const hy = -(13 * co - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a) + 2.5) / 17;
+    const px = lerp(s, hx, m), py = lerp(-co, hy, m);
+    const X = x + (px * cs - py * sn) * r, Y = y + (px * sn + py * cs) * r;
+    if (k) ctx.lineTo(X, Y); else ctx.moveTo(X, Y);
+  }
+  ctx.closePath();
+}
+RENDER.portals = (c, f, ctx, W, H, now, B) => {
+  const P = f.p, v = c.video, vw = v.videoWidth, vh = v.videoHeight;
+  const t = (now - f.t0) / 1000, cx = W / 2, cy = H / 2, base = Math.min(W, H), n = +P.count;
+  const pulse = B.pulse * P.pulse / 100;
+
+  // backdrop: the whole frame, dimmed and tinted
+  const bg = fitRect(vw, vh, W, H, true);
+  ctx.drawImage(v, bg.x, bg.y, bg.w, bg.h);
+  ctx.fillStyle = `rgba(14,2,30,${P.dim / 100})`; ctx.fillRect(0, 0, W, H);
+  const gl = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.hypot(W, H) / 2);
+  gl.addColorStop(0, 'rgba(255,46,126,0)'); gl.addColorStop(1, `rgba(193,60,255,${0.25 + 0.2 * pulse})`);
+  ctx.fillStyle = gl; ctx.fillRect(0, 0, W, H);
+
+  const g = P.entrance ? 0.06 + 2.5 * sm(1 - Math.abs(((t % 16) / 16) * 2 - 1)) : 1;   // grows from a point and shrinks back
+  const mg = 1 - (P.merge / 100) * (0.5 + 0.5 * Math.sin(t * 0.55));                   // 1 = apart, lower = drawn together
+  const r0 = base * P.size / 200 * g, w = P.orbit * Math.PI / 180;
+  const morph = P.shape === 'circle' ? 0 : P.shape === 'heart' ? 1 : 0.5 + 0.5 * Math.sin(t * 0.8);
+
+  const items = [];
+  for (let i = 0; i < n; i++) {
+    const u = w * t + i * TAU / n;
+    let x = cx, y = cy;
+    if (P.motion === 'eight') { x = cx + Math.sin(u) * W * 0.27 * mg; y = cy + Math.sin(2 * u) * H * 0.2 * mg; }
+    else if (n > 1) { const orR = base * 0.27 * mg; x = cx + Math.cos(u) * orR * 1.15; y = cy + Math.sin(u) * orR * 0.85; }
+    else { x = cx + Math.sin(t * 0.7) * base * 0.02; y = cy + Math.cos(t * 0.9) * base * 0.02; }
+    items.push({ i, x, y, r: r0 * (1 + 0.16 * pulse + 0.04 * Math.sin(t * 2 + i)), tilt: morph > 0.5 ? Math.sin(t * 1.4 + i * 1.7) * 0.12 : 0 });
+  }
+
+  // each viewport shows the clip from a different time offset
+  const cw = Math.min(vw, vh) / P.zoomIn;
+  for (const it of items) {
+    const s = getSrc(c, it.i, it.i * P.spread);
+    ctx.save();
+    shapePath(ctx, it.x, it.y, it.r, morph, it.tilt); ctx.clip();
+    ctx.translate(it.x, it.y);
+    ctx.rotate(P.spin * t * Math.PI / 180 * ((it.i & 1) ? -1 : 1));
+    const D = it.r * 2.1;
+    ctx.drawImage(s, (vw - cw) / 2, (vh - cw) / 2, cw, cw, -D / 2, -D / 2, D, D);
+    ctx.restore();
+  }
+
+  // rings and borders go on top so overlapping portals visibly cross
+  const conic = typeof ctx.createConicGradient === 'function';
+  for (const it of items) {
+    for (let k = 0; k < P.rings; k++) {
+      const ph = (t * 0.35 + k / P.rings + it.i * 0.13) % 1;
+      ctx.globalAlpha = (1 - ph) * 0.75; ctx.lineWidth = 2 + (1 - ph) * 3; ctx.strokeStyle = PAL[(k + it.i) % 5];
+      shapePath(ctx, it.x, it.y, it.r * (1.06 + 0.7 * ph), morph, it.tilt); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    const bw = P.border * (1 + 0.6 * pulse);
+    let stroke = PAL[it.i % 5];
+    if (conic) {
+      stroke = ctx.createConicGradient(t * 1.2 + it.i, it.x, it.y);
+      PAL.forEach((col, k) => stroke.addColorStop(k / PAL.length, col));
+      stroke.addColorStop(1, PAL[0]);
+    }
+    ctx.shadowColor = PAL[it.i % 5]; ctx.shadowBlur = P.glow;
+    ctx.lineWidth = bw; ctx.strokeStyle = stroke;
+    shapePath(ctx, it.x, it.y, it.r, morph, it.tilt); ctx.stroke();
+    ctx.shadowBlur = 0; ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(255,255,255,.7)';
+    shapePath(ctx, it.x, it.y, Math.max(1, it.r - bw / 2 - 2), morph, it.tilt); ctx.stroke();
+  }
+  trimTaps(f, n);
+};
+
+/* ---------- 3. Strip Displacement ---------- */
+function sliceNew(n) {
+  return Array.from({ length: n }, () => ({ x: 0, y: 0, rt: 0, sc: 1, vx: 0, vy: 0, vrt: 0, vsc: 0, tgt: { x: 0, y: 0, rt: 0, sc: 1 }, pend: null, at: 0 }));
+}
+/* Called on the beat: alternates between pushing strips out and bringing them back together. */
+function sliceStep(f, P, R, now) {
+  f.step++;
+  const out = f.step % 2 === 1;
+  if (out && P.orient === 'a') {
+    const o = (Math.floor(f.step / 2) % 2) ? 'v' : 'h';
+    if (o !== f.orient) { f.S.forEach(s => { s.x = s.y = s.rt = 0; s.sc = 1; s.vx = s.vy = s.vrt = s.vsc = 0; }); f.orient = o; }
+  } else if (P.orient !== 'a') f.orient = P.orient;
+  const horiz = f.orient === 'h';
+  const L = horiz ? R.w : R.h, Lp = horiz ? R.h : R.w, I = P.intensity / 100;
+  const kinds = ['slide', 'scatter', 'rotate', 'wave'];
+  const kind = P.motion === 'mix' ? kinds[Math.floor(f.step / 2) % 4] : P.motion;
+  f.S.forEach((s, i) => {
+    let a = 0, b = 0, r = 0, sc = 1;
+    if (out) {
+      if (kind === 'slide') a = (i % 2 ? 1 : -1) * L * 0.55 * I;
+      else if (kind === 'scatter') { a = (Math.random() - .5) * L * 1.1 * I; b = (Math.random() - .5) * Lp * 0.9 * I; r = (Math.random() - .5) * 1.4 * I; sc = 1 + (Math.random() - .5) * 0.3 * I; }
+      else if (kind === 'rotate') r = (i % 2 ? 1 : -1) * 0.9 * I * (0.5 + Math.random() * 0.5);
+      else a = Math.sin(i * 0.7) * L * 0.45 * I;
+    }
+    s.pend = { x: horiz ? a : b, y: horiz ? b : a, rt: r, sc };
+    s.at = now + i * P.stagger;
+  });
+}
+RENDER.slice = (c, f, ctx, W, H, now, B) => {
+  const P = f.p, v = c.video, vw = v.videoWidth, vh = v.videoHeight, n = +P.strips;
+  const R = fitRect(vw, vh, W, H, grid.dataset.fit === 'cover');
+  if (!f.S || f.S.length !== n) { f.S = sliceNew(n); f.last = now; f.orient = P.orient === 'v' ? 'v' : 'h'; }
+  const dt = Math.min(0.05, Math.max(0.001, (now - f.last) / 1000)); f.last = now;
+
+  if (B.count !== f.lastCount) {
+    f.lastCount = B.count; f.beatsSince++;
+    if (f.beatsSince >= P.every) { f.beatsSince = 0; sliceStep(f, P, R, now); }
+  }
+  // springs with a little overshoot, so strips snap into place
+  const K = P.smooth * P.smooth, C = 1.2 * P.smooth;
+  for (const s of f.S) {
+    if (s.pend && now >= s.at) { s.tgt = s.pend; s.pend = null; }
+    const g = s.tgt;
+    s.vx += ((g.x - s.x) * K - s.vx * C) * dt; s.x += s.vx * dt;
+    s.vy += ((g.y - s.y) * K - s.vy * C) * dt; s.y += s.vy * dt;
+    s.vrt += ((g.rt - s.rt) * K - s.vrt * C) * dt; s.rt += s.vrt * dt;
+    s.vsc += ((g.sc - s.sc) * K - s.vsc * C) * dt; s.sc += s.vsc * dt;
+  }
+
+  ctx.fillStyle = '#0b0614'; ctx.fillRect(0, 0, W, H);
+  // the moment revealed behind displaced strips
+  const back = getSrc(c, 0, P.reveal);
+  ctx.drawImage(back, R.x, R.y, R.w, R.h);
+  ctx.fillStyle = 'rgba(20,0,40,0.18)'; ctx.fillRect(R.x, R.y, R.w, R.h);
+
+  const horiz = f.orient === 'h';
+  for (let i = 0; i < n; i++) {
+    const s = f.S[i];
+    let sx = 0, sy = 0, sw = vw, sh = vh, dx = R.x, dy = R.y, dw = R.w, dh = R.h;
+    if (horiz) {
+      sy = i * vh / n; sh = vh / n;
+      const e0 = Math.round(R.y + i * R.h / n), e1 = Math.round(R.y + (i + 1) * R.h / n); dy = e0; dh = e1 - e0;
+    } else {
+      sx = i * vw / n; sw = vw / n;
+      const e0 = Math.round(R.x + i * R.w / n), e1 = Math.round(R.x + (i + 1) * R.w / n); dx = e0; dw = e1 - e0;
+    }
+    const moved = Math.abs(s.x) + Math.abs(s.y) + Math.abs(s.rt) * 40 + Math.abs(s.sc - 1) * 60 > 1.5;
+    ctx.save();
+    ctx.translate(dx + dw / 2 + s.x, dy + dh / 2 + s.y); ctx.rotate(s.rt); ctx.scale(s.sc, s.sc);
+    if (moved) { ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 3; }
+    ctx.drawImage(v, sx, sy, sw, sh, -dw / 2, -dh / 2, dw + (horiz ? 0 : 0.6), dh + (horiz ? 0.6 : 0));
+    if (moved) { ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = 1; ctx.strokeRect(-dw / 2, -dh / 2, dw, dh); }
+    ctx.restore();
+  }
+  if (B.pulse > 0.02) { ctx.fillStyle = `rgba(255,255,255,${0.13 * B.pulse})`; ctx.fillRect(0, 0, W, H); }
+  trimTaps(f, 1);
+};
+
+/* ---------- effect definitions: parameters and presets ---------- */
+const FXDEF = {
+  mirror: {
+    name: 'Mirror Symmetry',
+    def: { copies: 4, sym: 'h', subject: 55, expand: 55, spin: 0, kaleido: 0, pulse: 40, alpha: 80, animate: 'breathe', cycle: false },
+    ui: [
+      { k: 'copies', t: 'sel', l: 'Mirrored copies', o: [[2, '2'], [4, '4'], [8, '8']] },
+      { k: 'sym', t: 'sel', l: 'Symmetry', o: [['h', 'Horizontal'], ['v', 'Vertical'], ['r', 'Radial']] },
+      { k: 'subject', t: 'rng', l: 'Subject width', min: 30, max: 100, u: '%' },
+      { k: 'expand', t: 'rng', l: 'Expansion', min: 0, max: 100, u: '%' },
+      { k: 'spin', t: 'rng', l: 'Rotation', min: -120, max: 120, u: '°/s' },
+      { k: 'kaleido', t: 'rng', l: 'Kaleidoscope', min: 0, max: 100, u: '%' },
+      { k: 'pulse', t: 'rng', l: 'Beat zoom', min: 0, max: 100, u: '%' },
+      { k: 'alpha', t: 'rng', l: 'Copy opacity', min: 20, max: 100, u: '%' },
+      { k: 'animate', t: 'sel', l: 'Expansion motion', o: [['still', 'Still'], ['breathe', 'Breathing'], ['beat', 'On the beat']] },
+      { k: 'cycle', t: 'chk', l: 'Auto-cycle symmetry every 8 beats' }
+    ],
+    presets: {
+      'Dual Reflection': { copies: 2, sym: 'h', subject: 55, expand: 50, spin: 0, kaleido: 0, pulse: 35, alpha: 75, animate: 'breathe', cycle: false },
+      'Octa Mirror': { copies: 8, sym: 'h', subject: 50, expand: 80, spin: 0, kaleido: 0, pulse: 55, alpha: 85, animate: 'beat', cycle: false },
+      'Rotational Kaleidoscope': { copies: 8, sym: 'r', subject: 55, expand: 60, spin: 35, kaleido: 85, pulse: 45, alpha: 85, animate: 'breathe', cycle: true }
+    }
+  },
+  portals: {
+    name: 'Orbital Viewports',
+    def: { count: 2, motion: 'orbit', shape: 'circle', size: 46, orbit: 30, merge: 25, pulse: 40, spread: 2, rings: 3, border: 6, glow: 18, zoomIn: 1.2, spin: 0, dim: 55, entrance: false },
+    ui: [
+      { k: 'count', t: 'sel', l: 'Viewports', o: [[1, '1'], [2, '2'], [3, '3'], [4, '4']] },
+      { k: 'motion', t: 'sel', l: 'Path', o: [['orbit', 'Orbit'], ['eight', 'Figure eight']] },
+      { k: 'shape', t: 'sel', l: 'Shape', o: [['circle', 'Circle'], ['heart', 'Heart'], ['morph', 'Circle to heart']] },
+      { k: 'size', t: 'rng', l: 'Size', min: 20, max: 70, u: '%' },
+      { k: 'orbit', t: 'rng', l: 'Orbit speed', min: -120, max: 120, u: '°/s' },
+      { k: 'merge', t: 'rng', l: 'Convergence', min: 0, max: 100, u: '%' },
+      { k: 'pulse', t: 'rng', l: 'Beat scale', min: 0, max: 100, u: '%' },
+      { k: 'spread', t: 'rng', l: 'Time offset per viewport', min: 0, max: 10, step: 0.5, u: ' s' },
+      { k: 'rings', t: 'rng', l: 'Concentric rings', min: 0, max: 6 },
+      { k: 'border', t: 'rng', l: 'Border thickness', min: 2, max: 14, u: ' px' },
+      { k: 'glow', t: 'rng', l: 'Glow', min: 0, max: 40 },
+      { k: 'zoomIn', t: 'rng', l: 'Subject zoom', min: 1, max: 2.5, step: 0.05, u: '×' },
+      { k: 'spin', t: 'rng', l: 'Content rotation', min: -60, max: 60, u: '°/s' },
+      { k: 'dim', t: 'rng', l: 'Backdrop dimming', min: 0, max: 90, u: '%' },
+      { k: 'entrance', t: 'chk', l: 'Iris: grow from a point, then shrink' }
+    ],
+    presets: {
+      'Dual Heart Mask': { count: 2, motion: 'orbit', shape: 'heart', size: 44, orbit: 18, merge: 15, pulse: 55, spread: 2.5, rings: 2, border: 6, glow: 22, zoomIn: 1.2, spin: 0, dim: 60, entrance: false },
+      'Quad Orbit': { count: 4, motion: 'orbit', shape: 'circle', size: 34, orbit: 45, merge: 20, pulse: 35, spread: 1.5, rings: 3, border: 5, glow: 16, zoomIn: 1.3, spin: 25, dim: 65, entrance: false },
+      'Iris Expand': { count: 1, motion: 'orbit', shape: 'morph', size: 48, orbit: 0, merge: 0, pulse: 50, spread: 0, rings: 4, border: 7, glow: 26, zoomIn: 1.15, spin: 0, dim: 55, entrance: true },
+      'Lissajous Merge': { count: 2, motion: 'eight', shape: 'heart', size: 42, orbit: 24, merge: 90, pulse: 60, spread: 3, rings: 3, border: 6, glow: 28, zoomIn: 1.2, spin: 0, dim: 65, entrance: false }
+    }
+  },
+  slice: {
+    name: 'Strip Displacement',
+    def: { strips: 12, orient: 'h', motion: 'slide', every: 2, intensity: 65, stagger: 14, reveal: 4, smooth: 12 },
+    ui: [
+      { k: 'strips', t: 'rng', l: 'Strips', min: 4, max: 30 },
+      { k: 'orient', t: 'sel', l: 'Direction', o: [['h', 'Horizontal strips'], ['v', 'Vertical strips'], ['a', 'Alternating']] },
+      { k: 'motion', t: 'sel', l: 'Movement', o: [['slide', 'Slide'], ['scatter', 'Scatter'], ['rotate', 'Rotate'], ['wave', 'Wave'], ['mix', 'Mix of all']] },
+      { k: 'every', t: 'sel', l: 'Change every', o: [[1, '1 beat'], [2, '2 beats'], [4, '4 beats'], [8, '8 beats']] },
+      { k: 'intensity', t: 'rng', l: 'Intensity', min: 10, max: 100, u: '%' },
+      { k: 'stagger', t: 'rng', l: 'Stagger delay', min: 0, max: 80, u: ' ms' },
+      { k: 'reveal', t: 'rng', l: 'Reveal time offset', min: -10, max: 10, step: 0.5, u: ' s' },
+      { k: 'smooth', t: 'rng', l: 'Spring stiffness', min: 4, max: 22 }
+    ],
+    presets: {
+      'Beat Slide': { strips: 16, orient: 'h', motion: 'slide', every: 1, intensity: 75, stagger: 8, reveal: 4, smooth: 18 },
+      'Alternating Mix': { strips: 20, orient: 'a', motion: 'mix', every: 2, intensity: 60, stagger: 18, reveal: -5, smooth: 13 },
+      'Wave Reveal': { strips: 8, orient: 'v', motion: 'wave', every: 4, intensity: 70, stagger: 60, reveal: 6, smooth: 6 },
+      'Max Fragmentation': { strips: 30, orient: 'a', motion: 'mix', every: 1, intensity: 100, stagger: 6, reveal: 3, smooth: 16 }
+    }
+  }
+};
+
+/* ---------- panel state ---------- */
+const fxPanel = {
+  fx: 'none', target: 'active', preset: '',
+  params: { mirror: { ...FXDEF.mirror.def }, portals: { ...FXDEF.portals.def }, slice: { ...FXDEF.slice.def } }
+};
+const fxTargets = () => (fxPanel.target === 'all' ? cells : [cells[active]].filter(Boolean));
+function fxApply() {
+  const id = fxPanel.fx;
+  fxTargets().forEach(c => { if (id === 'none') fxStop(c); else fxStart(c, id, { ...fxPanel.params[id] }); });
+  fxLabel();
+}
+function fxAutoApply(c) {
+  if (fxPanel.target === 'all' && fxPanel.fx !== 'none') fxStart(c, fxPanel.fx, { ...fxPanel.params[fxPanel.fx] });
+}
+function fxLabel() {
+  const el = $('#fxTarget'); if (!el) return;
+  el.textContent = fxPanel.target === 'all' ? 'All screens' : `Screen ${pad(active + 1)}`;
+}
+const fmtVal = (v, u) => `${v}${u.u || ''}`;
+function renderFxPanel() {
+  const id = fxPanel.fx, def = FXDEF[id], presetsEl = $('#fxPresets'), paramsEl = $('#fxParams');
+  $('#fxSel').value = id;
+  if (!def) {
+    presetsEl.innerHTML = '';
+    paramsEl.innerHTML = '<p class="hint">Pick an effect to process the video on a screen. Time shifts and beat detection work with your own video files. Demo clips use the tempo clock.</p>';
+    return;
+  }
+  presetsEl.innerHTML = Object.keys(def.presets).map(n =>
+    `<button class="chip" type="button" data-preset="${esc(n)}" aria-pressed="${fxPanel.preset === n}">${esc(n)}</button>`).join('');
+  const P = fxPanel.params[id];
+  paramsEl.innerHTML = def.ui.map(u => {
+    const v = P[u.k], idk = 'fxp_' + u.k;
+    if (u.t === 'rng') return `<div class="prm"><label for="${idk}">${esc(u.l)}</label><output id="${idk}_o">${esc(fmtVal(v, u))}</output><input id="${idk}" type="range" data-k="${u.k}" min="${u.min}" max="${u.max}" step="${u.step || 1}" value="${v}"></div>`;
+    if (u.t === 'sel') return `<div class="prm"><label for="${idk}">${esc(u.l)}</label><select id="${idk}" data-k="${u.k}">${u.o.map(([val, lab]) => `<option value="${esc(val)}"${String(val) === String(v) ? ' selected' : ''}>${esc(lab)}</option>`).join('')}</select></div>`;
+    return `<label class="check"><input type="checkbox" id="${idk}" data-k="${u.k}"${v ? ' checked' : ''}><span>${esc(u.l)}</span></label>`;
+  }).join('');
+}
+
+/* ---------- wiring ---------- */
+const fxSec = $('#fxSec'), libSec = document.querySelector('.sec.lib');
+function showTab(which) {
+  const fx = which === 'fx';
+  $('#tabLib').setAttribute('aria-selected', String(!fx));
+  $('#tabFx').setAttribute('aria-selected', String(fx));
+  libSec.hidden = fx; fxSec.hidden = !fx;
+}
+$('#tabLib').onclick = () => showTab('lib');
+$('#tabFx').onclick = () => { showTab('fx'); fxLabel(); };
+
+$('#fxSel').addEventListener('change', e => {
+  fxPanel.fx = e.target.value; fxPanel.preset = '';
+  beatInit(); renderFxPanel(); fxApply();
+});
+fxSec.addEventListener('click', e => {
+  const chip = e.target.closest('.chip[data-preset]');
+  if (chip) {
+    const id = fxPanel.fx, name = chip.dataset.preset;
+    fxPanel.params[id] = { ...FXDEF[id].presets[name] }; fxPanel.preset = name;
+    beatInit(); renderFxPanel(); fxApply(); return;
+  }
+  const seg = e.target.closest('[data-target]');
+  if (seg) {
+    fxPanel.target = seg.dataset.target;
+    fxSec.querySelectorAll('[data-target]').forEach(b => b.setAttribute('aria-pressed', String(b === seg)));
+    fxApply();
+  }
+});
+fxSec.addEventListener('input', e => {
+  const el = e.target, k = el.dataset.k, id = fxPanel.fx;
+  if (!k || !FXDEF[id]) return;
+  const u = FXDEF[id].ui.find(x => x.k === k), cur = fxPanel.params[id][k];
+  let val;
+  if (el.type === 'checkbox') val = el.checked;
+  else if (el.type === 'range') val = Number(el.value);
+  else val = typeof cur === 'number' ? Number(el.value) : el.value;
+  fxPanel.params[id][k] = val; fxPanel.preset = '';
+  fxSec.querySelectorAll('.chip').forEach(b => b.setAttribute('aria-pressed', 'false'));
+  const out = $('#fxp_' + k + '_o'); if (out) out.textContent = fmtVal(val, u);
+  beatInit(); fxApply();
+});
+$('#beatMode').addEventListener('change', e => { beat.mode = e.target.value; if (beat.mode === 'audio') beatInit(); beat.next = 0; });
+$('#bpm').addEventListener('input', e => { beat.bpm = Number(e.target.value); $('#bpmOut').textContent = e.target.value; beat.next = 0; });
+$('#beatSens').addEventListener('input', e => { $('#sensOut').textContent = e.target.value; beat.sens = 2.2 - 0.12 * Number(e.target.value); });
+$('#tapTempo').addEventListener('click', tapTempo);
+renderFxPanel(); fxLabel();
+
+
+/* ---------- boot ---------- */
+function refreshUI() {
+  keepFocus(() => { renderTree(); renderFooter(); });
+  renderLayoutUI(); refreshTransport(); tick();
+}
+rebuildTree();
+['Demo clips', 'Demo clips/Motion', 'Demo clips/Test patterns'].forEach(p => expanded.add(p));
+note('Demo clips are loaded so you can try the layout. Open a folder to use your own videos.');
+{
+  const probe = document.createElement('video');
+  const can = t => probe.canPlayType(t) || 'no';
+  const h264 = can('video/mp4; codecs="avc1.640028, mp4a.40.2"'), vp9 = can('video/webm; codecs="vp9, opus"');
+  $('#codecNote').textContent = `This browser: H.264 + AAC ${h264}, WebM ${vp9}.` +
+    (h264 === 'no' ? ' H.264 MP4 will not play here. Use a WebM file or another browser.' : '');
+}
+setLayout(2, 2);
+selectFolder('Demo clips');
+})();
+</script>
+</body>
+</html>
