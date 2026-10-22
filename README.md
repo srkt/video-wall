@@ -53,6 +53,9 @@ Everything runs in one HTML file. There is nothing to install, no build step, an
 - **Shuffle** puts a different random video on every screen. It uses each video once before repeating any.
 - **Auto-shuffle** replaces a video with a new random one on its screen whenever it finishes.
 
+**Same video on every screen**
+- **Same video** (key `D`) copies the outlined screen's video to all screens. Choose **In sync**, or start each screen a few seconds later than the one before (+1, +3, +5 or +10 s), which gives a canon or echo effect.
+
 **Filters**
 - 18 per-screen looks, applied to one screen or all of them, plus a **Mix** button that gives every screen a different random filter.
 
@@ -184,6 +187,7 @@ Use the **Filter** menu in the top bar to set all screens, the menu on each scre
 |---|---|
 | Space | Play or pause all screens |
 | S | Shuffle all screens |
+| D | Same video on all screens |
 | Esc | Leave the enlarged view |
 | Double-click a screen | Enlarge or restore it |
 
